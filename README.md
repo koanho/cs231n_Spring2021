@@ -5,7 +5,7 @@ Inline questions' answers may not be accurate.
 
 assignment01 -> done
 
-assignment02 -> assignment05 and assignment04 - spatial group norm not done
+assignment02 -> Q5, Q4 - spatial group norm not done
 
 assignment03 -> not yet..
 
