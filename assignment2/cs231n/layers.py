@@ -789,18 +789,18 @@ def spatial_batchnorm_forward(x, gamma, beta, bn_param):
     running_var = bn_param.get("running_var", 1)
 
     if mode == 'train':
-      s_mean = np.mean(x, axis = (0, 2, 3))
-      s_var = np.var(x, axis = (0, 2, 3))
+      s_mean = np.mean(x, axis = (0, 2, 3), keepdims = True)
+      s_var = np.var(x, axis = (0, 2, 3), keepdims= True)
       bn_param["running_mean"] = momentum * running_mean + (1-momentum) * s_mean
       bn_param['running_var'] = momentum * running_var + (1-momentum) * s_var
 
-      normalized = (x - s_mean.reshape(1, -1, 1, 1)) / np.sqrt(s_var.reshape(1, -1, 1, 1) + eps)
+      normalized = (x - s_mean) / np.sqrt(s_var + eps)
       out = normalized * gamma.reshape(1, -1, 1, 1) + beta.reshape(1, -1, 1, 1)
 
       cache = (x, s_mean, s_var, normalized, eps, gamma)
 
     else:
-      out = (x - running_mean.reshape(1, -1, 1, 1)) / np.sqrt(running_var.reshape(1, -1, 1, 1) + eps)
+      out = (x - running_mean) / np.sqrt(running_var + eps)
       out = out * gamma.reshape(1, -1, 1, 1) + beta.reshape(1, -1, 1, 1)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -837,7 +837,7 @@ def spatial_batchnorm_backward(dout, cache):
     x, s_mean, s_var, normalized, eps, gamma = cache
 
     '''
-    # Calculate analytically
+    # Calculate analytically.
     size = dout.shape[0] * dout.shape[2] * dout.shape[3]
 
     dgamma = np.sum(dout * normalized, axis = (0, 2, 3))
@@ -846,19 +846,21 @@ def spatial_batchnorm_backward(dout, cache):
     
     d_hat = gamma.reshape(1, -1, 1, 1) * dout
 
-    d_var = np.sum( (d_hat * (-0.5) * (x - s_mean.reshape(1, -1, 1, 1)) * ((s_var + eps) ** (-1.5)).reshape(1, -1, 1, 1)) , axis = (0, 2, 3))
+    d_var = np.sum( (d_hat * (-0.5) * (x - s_mean) * ((s_var + eps) ** (-1.5))) , axis = (0, 2, 3), keepdims = True)
 
-    d_mean = np.sum( (-d_hat / (np.sqrt(s_var + eps).reshape(1, -1, 1, 1))), axis = (0, 2, 3))  -  2 * np.mean( (x - s_mean.reshape(1, -1, 1, 1)), axis = (0, 2, 3))
+    d_mean = np.sum( (-d_hat / np.sqrt(s_var + eps)), axis = (0, 2, 3), keepdims = True)  -  2 * np.mean( x - s_mean, axis = (0, 2, 3), keepdims = True)
 
-    dx = d_hat / (np.sqrt(s_var + eps)).reshape(1, -1, 1, 1) + (d_mean / size).reshape(1, -1, 1, 1) + (2 * d_var.reshape(1, -1, 1, 1) * (x - s_mean.reshape(1, -1, 1, 1))) / size
-    '''
+    dx = d_hat / np.sqrt(s_var + eps) + (d_mean / size) + (2 * d_var) * (x - s_mean) / size
+    
     # use Batchnorm
-
+    '''
     #makes 4D -> 2D to use batchnorm 2D. we calculate over channel so change axes
     dout_batch = ((np.transpose(dout, axes = (1, 0, 2, 3))).reshape(dout.shape[1], -1)).T
     x_batch = ((np.transpose(x, axes = (1, 0, 2, 3))).reshape(dout.shape[1], -1)).T
     normalized_batch = ((np.transpose(normalized, axes = (1, 0, 2, 3))).reshape(dout.shape[1], -1)).T
 
+    s_mean = s_mean[0, :, 0,0]
+    s_var = s_var[0, :, 0, 0]
     cache2 = (x_batch, normalized_batch, gamma, s_mean, s_var, eps)
     dx, dgamma, dbeta = batchnorm_backward_alt(dout_batch, cache2)
 
@@ -867,7 +869,7 @@ def spatial_batchnorm_backward(dout, cache):
     ###########################################################################
     #                             END OF YOUR CODE                            #
     ###########################################################################
-
+    
     return dx, dgamma, dbeta
 
 
@@ -902,7 +904,15 @@ def spatial_groupnorm_forward(x, gamma, beta, G, gn_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N,C,H,W = x.shape
+    grouped_x = x.reshape(N * G, -1)
+    grouped_mean = np.mean(grouped_x, axis = 1, keepdims = True)
+    grouped_var = np.var(grouped_x, axis = 1, keepdims = True)
+    normalized = (grouped_x - grouped_mean)/ np.sqrt(grouped_var + eps)
+
+    out = gamma * normalized.reshape(x.shape) + beta
+
+    cache = (x, normalized, grouped_mean, grouped_var, gamma, eps)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -931,7 +941,22 @@ def spatial_groupnorm_backward(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    ori_x, normalized, grouped_mean, grouped_var, gamma, eps = cache
+
+    dgamma = np.sum(normalized.reshape(ori_x.shape) * dout, axis = (0,2,3), keepdims = True)
+    dbeta = np.sum(dout, axis = (0,2,3), keepdims = True)
+
+    dnorm = dout * gamma
+
+    x = ori_x.reshape(normalized.shape)
+    dnorm = dnorm.reshape(normalized.shape)
+
+    d_var = np.sum(- 0.5 * dnorm * (x - grouped_mean) * ((grouped_var + eps)**(-1.5)), axis = -1, keepdims = True)
+    d_mean = np.sum(- (dnorm / (np.sqrt(grouped_var + eps))), axis = -1, keepdims = True) - (d_var * 2 * np.mean(x - grouped_mean, axis = -1, keepdims=True))
+
+    dx = dnorm / np.sqrt(grouped_var + eps) + d_var * 2 * (x - grouped_mean) / x.shape[1] + d_mean / x.shape[1]
+    
+    dx = dx.reshape(ori_x.shape)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
