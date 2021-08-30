@@ -148,7 +148,14 @@ class ThreeLayerConvNet(object):
 
 
         dout_1, grads['W1'], grads['b1'] = conv_relu_pool_backward(d_out2, cache['out1'])
+        
 
+
+        for i in range(1,4):
+          loss += 0.5 * self.reg * np.sum(self.params[f'W{i}']**2)
+          grads[f'W{i}'] += self.reg * self.params[f'W{i}']
+
+        
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
         #                             END OF YOUR CODE                             #
