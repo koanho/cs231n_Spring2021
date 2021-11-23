@@ -5,7 +5,7 @@ Inline questions' answers may not be accurate.
 
 assignment01 -> done
 
-assignment02 -> Q5 not done
+assignment02 -> done ( Q5 -> Pytorch)
 
 assignment03 -> not yet..
 
